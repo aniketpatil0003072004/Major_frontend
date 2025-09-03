@@ -1,7 +1,7 @@
 import React, { useState, useEffect, createContext, useContext } from "react";
 import "./App.css";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
-
+import axios from "axios"
 // ⚠️ Security Warning: API key is exposed in frontend code
 // In production, use Firebase Functions or serverless backend
 const GEMINI_API_KEY = "AIzaSyApWnqtylnOGz1DDU4DfCv2rnpRKTvmGxI";
@@ -468,6 +468,22 @@ const AdminDashboard = () => {
         newItem.token = `${newItem.department.toLowerCase().replace(' ', '_')}_token_${Date.now().toString().slice(-4)}`;
         
         // Send token email
+        //TODO:=================================
+
+        const sendMailByServer = async() =>{
+          await axios.post("http://localhost:8080/send-mail", {
+            "message":`Dear ${newItem.name}, Your login token for the Exam Proctor System is: ${newItem.token} Please use this token to access your dashboard. Best regards...`,
+            "to":newItem.email
+          },{
+            headers:{
+              "Content-type":"application/json"
+            }
+          })
+        }
+
+        sendMailByServer()
+
+
         sendEmail(newItem.email, 'Your Exam Proctor Login Token', 
           `Dear ${newItem.name},\n\nYour login token for the Exam Proctor System is: ${newItem.token}\n\nPlease use this token to access your dashboard.\n\nBest regards,\nExam Proctor System`);
       }
