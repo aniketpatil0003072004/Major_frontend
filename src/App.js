@@ -2,60 +2,148 @@ import React, { useState, useEffect, createContext, useContext } from "react";
 import "./App.css";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import axios from "axios"
-// ⚠️ Security Warning: API key is exposed in frontend code
-// In production, use Firebase Functions or serverless backend
+import toast, { Toaster } from 'react-hot-toast';
+
+const FIREBASE_URL = "https://exam-proctor-42c7f-default-rtdb.firebaseio.com/";
+
+
 const GEMINI_API_KEY = "AIzaSyApWnqtylnOGz1DDU4DfCv2rnpRKTvmGxI";
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
 
-// Auth Context
+
 const AuthContext = createContext();
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+
+
+const FirebaseAPI = {
+  
+  get: async (endpoint) => {
+    try {
+      const response = await fetch(`${FIREBASE_URL}${endpoint}.json`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      return data || {};
+    } catch (error) {
+      console.error(`Error fetching ${endpoint}:`, error);
+      return {};
+    }
+  },
+
+
+  post: async (endpoint, data) => {
+    try {
+      const response = await fetch(`${FIREBASE_URL}${endpoint}.json`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error(`Error posting to ${endpoint}:`, error);
+      throw error;
+    }
+  },
+
+  // Generic PUT request (for updates)
+  put: async (endpoint, data) => {
+    try {
+      const response = await fetch(`${FIREBASE_URL}${endpoint}.json`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error(`Error updating ${endpoint}:`, error);
+      throw error;
+    }
+  },
+
+  // Generic PATCH request (for partial updates)
+  patch: async (endpoint, data) => {
+    try {
+      const response = await fetch(`${FIREBASE_URL}${endpoint}.json`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error(`Error patching ${endpoint}:`, error);
+      throw error;
+    }
+  },
+
+  // Generic DELETE request
+  delete: async (endpoint) => {
+    try {
+      const response = await fetch(`${FIREBASE_URL}${endpoint}.json`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error(`Error deleting ${endpoint}:`, error);
+      throw error;
+    }
   }
-  return context;
 };
 
-// Data Storage Utilities
-const StorageKeys = {
-  USERS: 'examProctor_users',
-  DEPARTMENTS: 'examProctor_departments',
-  CLASSROOMS: 'examProctor_classrooms',
-  PROFESSORS: 'examProctor_professors',
-  EXAM_SLOTS: 'examProctor_examSlots',
-  PROFESSOR_TIMETABLES: 'examProctor_professorTimetables',
-  ALLOCATIONS: 'examProctor_allocations',
-  EMERGENCY_POOL: 'examProctor_emergencyPool',
-  EMAIL_LOG: 'examProctor_emailLog'
-};
-
-const getFromStorage = (key) => {
-  try {
-    const item = localStorage.getItem(key);
-    return item ? JSON.parse(item) : [];
-  } catch (error) {
-    console.error(`Error reading ${key} from storage:`, error);
-    return [];
-  }
-};
-
-const saveToStorage = (key, data) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (error) {
-    console.error(`Error saving ${key} to storage:`, error);
-  }
+// Database service functions
+const DatabaseService = {
+  // Users
+  getUsers: () => FirebaseAPI.get('users'),
+  addUser: (user) => FirebaseAPI.post('users', user),
+  updateUser: (id, user) => FirebaseAPI.patch(`users/${id}`, user),
+  
+  // Departments
+  getDepartments: () => FirebaseAPI.get('departments'),
+  addDepartment: (department) => FirebaseAPI.post('departments', department),
+  updateDepartment: (id, department) => FirebaseAPI.patch(`departments/${id}`, department),
+  
+  // Classrooms
+  getClassrooms: () => FirebaseAPI.get('classrooms'),
+  addClassroom: (classroom) => FirebaseAPI.post('classrooms', classroom),
+  updateClassroom: (id, classroom) => FirebaseAPI.patch(`classrooms/${id}`, classroom),
+  
+  // Professors
+  getProfessors: () => FirebaseAPI.get('professors'),
+  addProfessor: (professor) => FirebaseAPI.post('professors', professor),
+  updateProfessor: (id, professor) => FirebaseAPI.patch(`professors/${id}`, professor),
+  
+  // Exam Slots
+  getExamSlots: () => FirebaseAPI.get('examSlots'),
+  addExamSlot: (slot) => FirebaseAPI.post('examSlots', slot),
+  updateExamSlot: (id, slot) => FirebaseAPI.patch(`examSlots/${id}`, slot),
+  
+  // Professor Timetables
+  getTimetables: () => FirebaseAPI.get('professorTimetables'),
+  addTimetable: (timetable) => FirebaseAPI.post('professorTimetables', timetable),
+  updateTimetable: (id, timetable) => FirebaseAPI.patch(`professorTimetables/${id}`, timetable),
+  
+  // Allocations
+  getAllocations: () => FirebaseAPI.get('allocations'),
+  addAllocation: (allocation) => FirebaseAPI.post('allocations', allocation),
+  updateAllocation: (id, allocation) => FirebaseAPI.patch(`allocations/${id}`, allocation),
+  
+  // Emergency Pool
+  getEmergencyPool: () => FirebaseAPI.get('emergencyPool'),
+  addToEmergencyPool: (entry) => FirebaseAPI.post('emergencyPool', entry),
+  
+  // Email Log
+  getEmailLog: () => FirebaseAPI.get('emailLog'),
+  addEmailLog: (email) => FirebaseAPI.post('emailLog', email)
 };
 
 const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
-// Mock Email Service
-const sendEmail = (to, subject, body) => {
-  const emailLog = getFromStorage(StorageKeys.EMAIL_LOG);
+// Mock Email Service with Firebase logging
+const sendEmail = async (to, subject, body) => {
   const newEmail = {
     id: generateId(),
     to,
@@ -64,136 +152,26 @@ const sendEmail = (to, subject, body) => {
     sent_at: new Date().toISOString(),
     status: 'sent'
   };
-  emailLog.push(newEmail);
-  saveToStorage(StorageKeys.EMAIL_LOG, emailLog);
-  console.log(`📧 Email sent to ${to}: ${subject}`);
-  return newEmail;
-};
-
-// Initialize default data
-const initializeDefaultData = () => {
-  // Admin user
-  const users = getFromStorage(StorageKeys.USERS);
-  if (users.length === 0) {
-    saveToStorage(StorageKeys.USERS, [{
-      id: 'admin_001',
-      username: 'admin',
-      password: 'admin123',
-      role: 'admin',
-      name: 'System Administrator'
-    }]);
-  }
-
-  // Sample departments
-  const departments = getFromStorage(StorageKeys.DEPARTMENTS);
-  if (departments.length === 0) {
-    saveToStorage(StorageKeys.DEPARTMENTS, [
-      { id: 'dept_001', name: 'Computer Science', description: 'Department of Computer Science and Engineering', classrooms_count: 9, created_at: new Date().toISOString() },
-      { id: 'dept_002', name: 'Mathematics', description: 'Department of Mathematics', classrooms_count: 6, created_at: new Date().toISOString() },
-      { id: 'dept_003', name: 'Physics', description: 'Department of Physics', classrooms_count: 5, created_at: new Date().toISOString() },
-      { id: 'dept_004', name: 'Chemistry', description: 'Department of Chemistry', classrooms_count: 7, created_at: new Date().toISOString() }
-    ]);
-  }
-
-  // Sample classrooms with floor and room numbers
-  const classrooms = getFromStorage(StorageKeys.CLASSROOMS);
-  if (classrooms.length === 0) {
-    const rooms = [
-      // Computer Science - 9 classrooms
-      { id: 'room_001', name: 'CS-101', department: 'Computer Science', floor: 1, room_number: '101', capacity: 60, facilities: ['Projector', 'AC', 'Computers'] },
-      { id: 'room_002', name: 'CS-102', department: 'Computer Science', floor: 1, room_number: '102', capacity: 50, facilities: ['Projector', 'AC'] },
-      { id: 'room_003', name: 'CS-201', department: 'Computer Science', floor: 2, room_number: '201', capacity: 45, facilities: ['Smart Board'] },
-      { id: 'room_004', name: 'CS-202', department: 'Computer Science', floor: 2, room_number: '202', capacity: 40, facilities: ['Projector'] },
-      { id: 'room_005', name: 'CS-203', department: 'Computer Science', floor: 2, room_number: '203', capacity: 55, facilities: ['Lab Equipment'] },
-      { id: 'room_006', name: 'CS-301', department: 'Computer Science', floor: 3, room_number: '301', capacity: 35, facilities: ['AC'] },
-      { id: 'room_007', name: 'CS-302', department: 'Computer Science', floor: 3, room_number: '302', capacity: 50, facilities: ['Projector', 'AC'] },
-      { id: 'room_008', name: 'CS-303', department: 'Computer Science', floor: 3, room_number: '303', capacity: 42, facilities: ['Smart Board'] },
-      { id: 'room_009', name: 'CS-Lab', department: 'Computer Science', floor: 1, room_number: '150', capacity: 30, facilities: ['Computers', 'Projector'] },
-      
-      // Mathematics - 6 classrooms
-      { id: 'room_010', name: 'M-101', department: 'Mathematics', floor: 1, room_number: '101', capacity: 40, facilities: ['Whiteboard'] },
-      { id: 'room_011', name: 'M-102', department: 'Mathematics', floor: 1, room_number: '102', capacity: 35, facilities: ['Projector'] },
-      { id: 'room_012', name: 'M-201', department: 'Mathematics', floor: 2, room_number: '201', capacity: 50, facilities: ['Smart Board'] },
-      { id: 'room_013', name: 'M-202', department: 'Mathematics', floor: 2, room_number: '202', capacity: 45, facilities: ['AC', 'Whiteboard'] },
-      { id: 'room_014', name: 'M-301', department: 'Mathematics', floor: 3, room_number: '301', capacity: 38, facilities: ['Projector'] },
-      { id: 'room_015', name: 'M-302', department: 'Mathematics', floor: 3, room_number: '302', capacity: 42, facilities: ['AC'] },
-      
-      // Physics - 5 classrooms
-      { id: 'room_016', name: 'P-101', department: 'Physics', floor: 1, room_number: '101', capacity: 45, facilities: ['Lab Equipment'] },
-      { id: 'room_017', name: 'P-201', department: 'Physics', floor: 2, room_number: '201', capacity: 40, facilities: ['Projector', 'Lab Setup'] },
-      { id: 'room_018', name: 'P-202', department: 'Physics', floor: 2, room_number: '202', capacity: 35, facilities: ['AC'] },
-      { id: 'room_019', name: 'P-301', department: 'Physics', floor: 3, room_number: '301', capacity: 50, facilities: ['Smart Board'] },
-      { id: 'room_020', name: 'P-Lab', department: 'Physics', floor: 1, room_number: '150', capacity: 25, facilities: ['Lab Equipment', 'Fume Hood'] },
-      
-      // Chemistry - 7 classrooms
-      { id: 'room_021', name: 'C-101', department: 'Chemistry', floor: 1, room_number: '101', capacity: 40, facilities: ['Fume Hood'] },
-      { id: 'room_022', name: 'C-102', department: 'Chemistry', floor: 1, room_number: '102', capacity: 35, facilities: ['Lab Equipment'] },
-      { id: 'room_023', name: 'C-201', department: 'Chemistry', floor: 2, room_number: '201', capacity: 45, facilities: ['Projector'] },
-      { id: 'room_024', name: 'C-202', department: 'Chemistry', floor: 2, room_number: '202', capacity: 42, facilities: ['AC', 'Fume Hood'] },
-      { id: 'room_025', name: 'C-301', department: 'Chemistry', floor: 3, room_number: '301', capacity: 38, facilities: ['Smart Board'] },
-      { id: 'room_026', name: 'C-302', department: 'Chemistry', floor: 3, room_number: '302', capacity: 50, facilities: ['Lab Equipment'] },
-      { id: 'room_027', name: 'C-Lab', department: 'Chemistry', floor: 1, room_number: '150', capacity: 28, facilities: ['Lab Equipment', 'Fume Hood', 'Safety Shower'] }
-    ];
-    
-    rooms.forEach(room => {
-      room.created_at = new Date().toISOString();
-    });
-    
-    saveToStorage(StorageKeys.CLASSROOMS, rooms);
-  }
-
-  // Sample professors with email addresses
-  const professors = getFromStorage(StorageKeys.PROFESSORS);
-  if (professors.length === 0) {
-    const profs = [
-      { id: 'prof_001', name: 'Dr. John Smith', email: 'john.smith@university.edu', designation: 'Assistant Professor', department: 'Computer Science', phone: '123-456-7890', token: 'cs_token_001' },
-      { id: 'prof_002', name: 'Dr. Sarah Johnson', email: 'sarah.johnson@university.edu', designation: 'Associate Professor', department: 'Computer Science', phone: '123-456-7891', token: 'cs_token_002' },
-      { id: 'prof_003', name: 'Dr. Michael Brown', email: 'michael.brown@university.edu', designation: 'Professor', department: 'Mathematics', phone: '123-456-7892', token: 'math_token_001' },
-      { id: 'prof_004', name: 'Dr. Emily Davis', email: 'emily.davis@university.edu', designation: 'Assistant Professor', department: 'Physics', phone: '123-456-7893', token: 'phy_token_001' },
-      { id: 'prof_005', name: 'Dr. Robert Wilson', email: 'robert.wilson@university.edu', designation: 'Associate Professor', department: 'Chemistry', phone: '123-456-7894', token: 'chem_token_001' },
-      { id: 'prof_006', name: 'Dr. Lisa Anderson', email: 'lisa.anderson@university.edu', designation: 'Assistant Professor', department: 'Computer Science', phone: '123-456-7895', token: 'cs_token_003' },
-      { id: 'prof_007', name: 'Dr. David Martinez', email: 'david.martinez@university.edu', designation: 'Professor', department: 'Mathematics', phone: '123-456-7896', token: 'math_token_002' },
-      { id: 'prof_008', name: 'Dr. Jennifer Taylor', email: 'jennifer.taylor@university.edu', designation: 'Assistant Professor', department: 'Physics', phone: '123-456-7897', token: 'phy_token_002' }
-    ];
-    
-    profs.forEach(prof => {
-      prof.created_at = new Date().toISOString();
-      // Send login token email
-      sendEmail(prof.email, 'Your Exam Proctor Login Token', 
-        `Dear ${prof.name},\n\nYour login token for the Exam Proctor System is: ${prof.token}\n\nPlease use this token to access your dashboard.\n\nBest regards,\nExam Proctor System`);
-    });
-    
-    saveToStorage(StorageKeys.PROFESSORS, profs);
-  }
-
-  // Sample exam slots - simplified (only day, date, subject)
-  const examSlots = getFromStorage(StorageKeys.EXAM_SLOTS);
-  if (examSlots.length === 0) {
-    const today = new Date();
-    const subjects = [
-      'Data Structures', 'Database Management', 'Operating Systems', 'Computer Networks',
-      'Calculus I', 'Linear Algebra', 'Statistics', 'Discrete Mathematics',
-      'Quantum Physics', 'Thermodynamics', 'Mechanics', 'Electronics',
-      'Organic Chemistry', 'Physical Chemistry', 'Analytical Chemistry', 'Biochemistry'
-    ];
-    
-    const slots = [];
-    for (let i = 1; i <= 20; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-      
-      slots.push({
-        id: `slot_${i.toString().padStart(3, '0')}`,
-        day: dayName,
-        date: date.toISOString().split('T')[0],
-        subject: subjects[Math.floor(Math.random() * subjects.length)],
-        created_at: new Date().toISOString()
-      });
-    }
-    saveToStorage(StorageKeys.EXAM_SLOTS, slots);
+  
+  try {
+    await DatabaseService.addEmailLog(newEmail);
+    console.log(`📧 Email sent to ${to}: ${subject}`);
+    return newEmail;
+  } catch (error) {
+    console.error('Error logging email:', error);
+    return newEmail;
   }
 };
+
+// Convert Firebase object to array
+const firebaseToArray = (firebaseData) => {
+  if (!firebaseData) return [];
+  return Object.keys(firebaseData).map(key => ({
+    firebaseId: key,
+    ...firebaseData[key]
+  }));
+};
+
 
 // Gemini AI Integration
 const callGeminiAPI = async (prompt) => {
@@ -225,24 +203,32 @@ const callGeminiAPI = async (prompt) => {
 };
 
 // Auth Provider
+// Auth Provider - Fixed version
 const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true); // Add this state
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('currentUser');
+  };
 
   useEffect(() => {
-    initializeDefaultData();
     const savedUser = localStorage.getItem('currentUser');
     if (savedUser) {
       setUser(JSON.parse(savedUser));
     }
+    setInitializing(false); // Set initializing to false after checking localStorage
   }, []);
 
   const login = async (credentials, type) => {
     setLoading(true);
     try {
       if (type === 'admin') {
-        const users = getFromStorage(StorageKeys.USERS);
-        const admin = users.find(u => u.username === credentials.username && u.password === credentials.password && u.role === 'admin');
+        const users = await DatabaseService.getUsers();
+        const userArray = firebaseToArray(users);
+        const admin = userArray.find(u => u.username === credentials.username && u.password === credentials.password && u.role === 'admin');
         
         if (admin) {
           const userData = { id: admin.id, role: 'admin', name: admin.name, username: admin.username };
@@ -253,8 +239,9 @@ const AuthProvider = ({ children }) => {
           return { success: false, error: 'Invalid admin credentials' };
         }
       } else {
-        const professors = getFromStorage(StorageKeys.PROFESSORS);
-        const professor = professors.find(p => p.token === credentials.token);
+        const professors = await DatabaseService.getProfessors();
+        const professorArray = firebaseToArray(professors);
+        const professor = professorArray.find(p => p.token === credentials.token);
         
         if (professor) {
           const userData = { 
@@ -273,19 +260,15 @@ const AuthProvider = ({ children }) => {
         }
       }
     } catch (error) {
+      console.error('Login error:', error);
       return { success: false, error: 'Login failed' };
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('currentUser');
-  };
-
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, initializing }}>
       {children}
     </AuthContext.Provider>
   );
@@ -296,8 +279,8 @@ const Login = () => {
   const [loginType, setLoginType] = useState('admin');
   const [credentials, setCredentials] = useState({ username: '', password: '', token: '' });
   const [error, setError] = useState('');
-  const { login, loading } = useAuth();
   const navigate = useNavigate();
+  const {login, loading} = useContext(AuthContext)
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -322,9 +305,7 @@ const Login = () => {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-800 mb-2">Exam Proctor System</h1>
           <p className="text-gray-600">Smart Instant Allocation</p>
-          <div className="mt-2 text-xs text-orange-600 bg-orange-50 p-2 rounded">
-            ⚠️ Frontend Demo • Instant AI allocation active
-          </div>
+          
         </div>
 
         <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
@@ -406,13 +387,13 @@ const Login = () => {
           </button>
         </form>
 
-        {loginType === 'admin' && (
+        {/* {loginType === 'admin' && (
           <div className="mt-4 p-3 bg-gray-50 rounded-md text-xs text-gray-600">
             <p><strong>Demo Admin:</strong></p>
             <p>Username: admin</p>
             <p>Password: admin123</p>
           </div>
-        )}
+        )} */}
       </div>
     </div>
   );
@@ -420,7 +401,7 @@ const Login = () => {
 
 // Admin Dashboard
 const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState('overview');
+ const [activeTab, setActiveTab] = useState('overview');
   const [departments, setDepartments] = useState([]);
   const [classrooms, setClassrooms] = useState([]);
   const [professors, setProfessors] = useState([]);
@@ -429,7 +410,14 @@ const AdminDashboard = () => {
   const [emergencyPool, setEmergencyPool] = useState([]);
   const [emailLog, setEmailLog] = useState([]);
   const [loading, setLoading] = useState(false);
-  const { logout } = useAuth();
+  const { logout } = useContext(AuthContext);
+  const navigate = useNavigate();
+
+   const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+  
 
   const [forms, setForms] = useState({
     department: { name: '', description: '', classrooms_count: 1 },
@@ -438,21 +426,36 @@ const AdminDashboard = () => {
     examSlot: { day: '', date: '', subject: '' }
   });
 
-  const loadData = () => {
-    setDepartments(getFromStorage(StorageKeys.DEPARTMENTS));
-    setClassrooms(getFromStorage(StorageKeys.CLASSROOMS));
-    setProfessors(getFromStorage(StorageKeys.PROFESSORS));
-    setExamSlots(getFromStorage(StorageKeys.EXAM_SLOTS));
-    setAllocations(getFromStorage(StorageKeys.ALLOCATIONS));
-    setEmergencyPool(getFromStorage(StorageKeys.EMERGENCY_POOL));
-    setEmailLog(getFromStorage(StorageKeys.EMAIL_LOG));
+  const loadData = async () => {
+    try {
+      const [deptData, classData, profData, slotData, allocData, poolData, emailData] = await Promise.all([
+        DatabaseService.getDepartments(),
+        DatabaseService.getClassrooms(),
+        DatabaseService.getProfessors(),
+        DatabaseService.getExamSlots(),
+        DatabaseService.getAllocations(),
+        DatabaseService.getEmergencyPool(),
+        DatabaseService.getEmailLog()
+      ]);
+
+      setDepartments(firebaseToArray(deptData));
+      setClassrooms(firebaseToArray(classData));
+      setProfessors(firebaseToArray(profData));
+      setExamSlots(firebaseToArray(slotData));
+      setAllocations(firebaseToArray(allocData));
+      setEmergencyPool(firebaseToArray(poolData));
+      setEmailLog(firebaseToArray(emailData));
+    } catch (error) {
+      console.error('Error loading data:', error);
+      toast.error('Error loading data');
+    }
   };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const handleSubmit = (type, e) => {
+  const handleSubmit = async (type, e) => {
     e.preventDefault();
     setLoading(true);
     
@@ -467,24 +470,22 @@ const AdminDashboard = () => {
       if (type === 'professor') {
         newItem.token = `${newItem.department.toLowerCase().replace(' ', '_')}_token_${Date.now().toString().slice(-4)}`;
         
-        // Send token email
-        //TODO:=================================
-
-        const sendMailByServer = async() =>{
+        // Send token email via backend server
+        try {
           await axios.post("http://localhost:8080/send-mail", {
-            "message":`Dear ${newItem.name}, Your login token for the Exam Proctor System is: ${newItem.token} Please use this token to access your dashboard. Best regards...`,
-            "to":newItem.email
-          },{
-            headers:{
-              "Content-type":"application/json"
+            "message": `Dear ${newItem.name}, Your login token for the Exam Proctor System is: ${newItem.token} Please use this token to access your dashboard. Best regards...`,
+            "to": newItem.email
+          }, {
+            headers: {
+              "Content-type": "application/json"
             }
-          })
+          });
+        } catch (error) {
+          console.error('Error sending email via backend:', error);
         }
 
-        sendMailByServer()
-
-
-        sendEmail(newItem.email, 'Your Exam Proctor Login Token', 
+        // Also log to Firebase
+        await sendEmail(newItem.email, 'Your Exam Proctor Login Token', 
           `Dear ${newItem.name},\n\nYour login token for the Exam Proctor System is: ${newItem.token}\n\nPlease use this token to access your dashboard.\n\nBest regards,\nExam Proctor System`);
       }
 
@@ -494,18 +495,31 @@ const AdminDashboard = () => {
         newItem.day = date.toLocaleDateString('en-US', { weekday: 'long' });
       }
 
-      const storageKey = StorageKeys[type.toUpperCase() + 'S'] || StorageKeys[type.toUpperCase()];
-      const currentData = getFromStorage(storageKey);
-      
       // Check for duplicates
-      if (type === 'department' && currentData.some(d => d.name === newItem.name)) {
-        alert('Department already exists!');
+      if (type === 'department' && departments.some(d => d.name === newItem.name)) {
+        toast.error('Department already exists!');
         setLoading(false);
         return;
       }
 
-      currentData.push(newItem);
-      saveToStorage(storageKey, currentData);
+      // Save to Firebase
+      let result;
+      switch (type) {
+        case 'department':
+          result = await DatabaseService.addDepartment(newItem);
+          break;
+        case 'classroom':
+          result = await DatabaseService.addClassroom(newItem);
+          break;
+        case 'professor':
+          result = await DatabaseService.addProfessor(newItem);
+          break;
+        case 'examSlot':
+          result = await DatabaseService.addExamSlot(newItem);
+          break;
+        default:
+          throw new Error('Unknown type');
+      }
 
       // Reset form
       setForms({
@@ -516,10 +530,11 @@ const AdminDashboard = () => {
                 { day: '', date: '', subject: '' }
       });
 
-      loadData();
-      alert(`${type.charAt(0).toUpperCase() + type.slice(1)} added successfully!`);
+      await loadData();
+      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} added successfully!`);
     } catch (error) {
-      alert('Error adding item: ' + error.message);
+      console.error('Error adding item:', error);
+      toast.error('Error adding item: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -558,10 +573,10 @@ const AdminDashboard = () => {
           <div className="flex justify-between items-center py-4">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-              <div className="text-xs text-orange-600">Simplified System • Instant AI Allocation</div>
+              <div className="text-xs text-green-600">Firebase Backend • Real-time Instant AI Allocation</div>
             </div>
             <button
-              onClick={logout}
+              onClick={handleLogout}
               className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md transition"
             >
               Logout
@@ -953,6 +968,17 @@ const AdminDashboard = () => {
                       required
                     />
                   </div>
+                  <div className="w-full">
+                    <label className="text-sm font-medium text-gray-700 mb-1">Capacity</label>
+                    <input
+                      type="text"
+                      value={forms.classroom.capacity}
+                      onChange={(e) => setForms({...forms, classroom: {...forms.classroom, capacity: e.target.value}})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      placeholder="e.g., 50"
+                      required
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
@@ -1029,7 +1055,16 @@ const ProfessorDashboard = () => {
   const [myTimetable, setMyTimetable] = useState([]);
   const [loading, setLoading] = useState(false);
   const [conflictModal, setConflictModal] = useState({ show: false, day: '', conflicts: [] });
-  const { logout, user } = useAuth();
+  const {logout, user} = useContext(AuthContext)
+
+  const navigate = useNavigate();
+
+    const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  
 
   // Timetable form state
   const [timetableForm, setTimetableForm] = useState({
@@ -1040,36 +1075,51 @@ const ProfessorDashboard = () => {
     semester: ''
   });
 
-  const loadData = () => {
-    const allExamSlots = getFromStorage(StorageKeys.EXAM_SLOTS);
-    const allAllocations = getFromStorage(StorageKeys.ALLOCATIONS);
-    const allTimetables = getFromStorage(StorageKeys.PROFESSOR_TIMETABLES);
+  const loadData = async () => {
+    try {
+      const [slotsData, allocationsData, timetablesData] = await Promise.all([
+        DatabaseService.getExamSlots(),
+        DatabaseService.getAllocations(),
+        DatabaseService.getTimetables()
+      ]);
 
-    setExamSlots(allExamSlots);
-    setMyAllocations(allAllocations.filter(alloc => alloc.professor_id === user.id));
-    setMyTimetable(allTimetables.filter(tt => tt.professor_id === user.id));
+      setExamSlots(firebaseToArray(slotsData));
+      
+      const allAllocations = firebaseToArray(allocationsData);
+      setMyAllocations(allAllocations.filter(alloc => alloc.professor_id === user.id));
+      
+      const allTimetables = firebaseToArray(timetablesData);
+      setMyTimetable(allTimetables.filter(tt => tt.professor_id === user.id));
+    } catch (error) {
+      console.error('Error loading professor data:', error);
+      toast.error('Error loading data');
+    }
   };
 
   useEffect(() => {
-    loadData();
+    if (user) {
+      loadData();
+    }
   }, [user]);
 
-  const addToTimetable = (e) => {
+  const addToTimetable = async (e) => {
     e.preventDefault();
-    const newEntry = {
-      id: generateId(),
-      professor_id: user.id,
-      ...timetableForm,
-      created_at: new Date().toISOString()
-    };
+    try {
+      const newEntry = {
+        id: generateId(),
+        professor_id: user.id,
+        ...timetableForm,
+        created_at: new Date().toISOString()
+      };
 
-    const allTimetables = getFromStorage(StorageKeys.PROFESSOR_TIMETABLES);
-    allTimetables.push(newEntry);
-    saveToStorage(StorageKeys.PROFESSOR_TIMETABLES, allTimetables);
-
-    setTimetableForm({ day: '', subject: '', start_time: '', end_time: '', semester: '' });
-    loadData();
-    alert('Timetable entry added successfully!');
+      await DatabaseService.addTimetable(newEntry);
+      setTimetableForm({ day: '', subject: '', start_time: '', end_time: '', semester: '' });
+      await loadData();
+      toast.success('Timetable entry added successfully!');
+    } catch (error) {
+      console.error('Error adding timetable entry:', error);
+      toast.error('Error adding timetable entry');
+    }
   };
 
   const checkConflicts = (selectedDay) => {
@@ -1097,7 +1147,7 @@ const ProfessorDashboard = () => {
       // Proceed with immediate allocation
       await performInstantAllocation(selectedDay);
     } catch (error) {
-      alert('Allocation failed: ' + error.message);
+      toast.error('Allocation failed: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -1116,16 +1166,21 @@ const ProfessorDashboard = () => {
       const daySlots = examSlots.filter(slot => slot.day === selectedDay);
       
       if (daySlots.length === 0) {
-        alert('No exam slots available for this day');
+        toast.error('No exam slots available for this day');
         return;
       }
 
       // Randomly select one exam slot
       const randomSlot = daySlots[Math.floor(Math.random() * daySlots.length)];
 
-      // Get all classrooms and allocations
-      const allClassrooms = getFromStorage(StorageKeys.CLASSROOMS);
-      const allAllocations = getFromStorage(StorageKeys.ALLOCATIONS);
+      // Get all classrooms and allocations from Firebase
+      const [classroomsData, allocationsData] = await Promise.all([
+        DatabaseService.getClassrooms(),
+        DatabaseService.getAllocations()
+      ]);
+
+      const allClassrooms = firebaseToArray(classroomsData);
+      const allAllocations = firebaseToArray(allocationsData);
 
       // Find classrooms used on this day for this slot
       const usedClassroomsThisSlot = allAllocations
@@ -1202,19 +1257,19 @@ Please provide a JSON response with ONLY the classroom allocation:
       }
 
       if (!selectedClassroom) {
-        // Add to emergency pool
-        const emergencyPool = getFromStorage(StorageKeys.EMERGENCY_POOL);
-        emergencyPool.push({
+        // Add to emergency pool in Firebase
+        const emergencyEntry = {
           professor_id: user.id,
           professor_name: user.name,
           department: user.department,
           requested_day: selectedDay,
           exam_subject: randomSlot.subject,
-          reason: 'All classrooms are full for this exam slot'
-        });
-        saveToStorage(StorageKeys.EMERGENCY_POOL, emergencyPool);
+          reason: 'All classrooms are full for this exam slot',
+          created_at: new Date().toISOString()
+        };
         
-        alert('All classrooms are full for this exam slot. You have been added to the emergency pool.');
+        await DatabaseService.addToEmergencyPool(emergencyEntry);
+        toast.error('All classrooms are full for this exam slot. You have been added to the emergency pool.');
         return;
       }
 
@@ -1237,24 +1292,25 @@ Please provide a JSON response with ONLY the classroom allocation:
         created_at: new Date().toISOString()
       };
 
-      // Save allocation
-      const currentAllocations = getFromStorage(StorageKeys.ALLOCATIONS);
-      currentAllocations.push(newAllocation);
-      saveToStorage(StorageKeys.ALLOCATIONS, currentAllocations);
+      // Save allocation to Firebase
+      await DatabaseService.addAllocation(newAllocation);
 
       // Send confirmation email
-      const professor = getFromStorage(StorageKeys.PROFESSORS).find(p => p.id === user.id);
+      const professorsData = await DatabaseService.getProfessors();
+      const professorArray = firebaseToArray(professorsData);
+      const professor = professorArray.find(p => p.id === user.id);
+      
       if (professor) {
-        sendEmail(professor.email, 'Exam Proctoring Assignment Confirmation - INSTANT ALLOCATION', 
+        await sendEmail(professor.email, 'Exam Proctoring Assignment Confirmation - INSTANT ALLOCATION', 
           `Dear ${user.name},\n\nYou have been instantly allocated for exam proctoring:\n\n📅 Date: ${randomSlot.date} (${selectedDay})\n📚 Subject: ${randomSlot.subject}\n🏛️ Department: ${selectedClassroom.department}\n🏫 Classroom: ${selectedClassroom.name}\n🏢 Floor: ${selectedClassroom.floor}\n🚪 Room Number: ${selectedClassroom.room_number}\n\n✅ Status: CONFIRMED\n\nPlease be present 15 minutes before the exam starts.\n\nThis allocation was processed instantly using AI.\n\nBest regards,\nExam Proctor System`);
       }
 
-      loadData();
-      alert(`🎉 Allocation successful!\n\nClassroom: ${selectedClassroom.name}\nSubject: ${randomSlot.subject}\nDate: ${randomSlot.date}\n\nConfirmation email sent!`);
+      await loadData();
+      toast.success(`🎉 Allocation successful!\n\nClassroom: ${selectedClassroom.name}\nSubject: ${randomSlot.subject}\nDate: ${randomSlot.date}\n\nConfirmation email sent!`);
 
     } catch (error) {
       console.error('Allocation error:', error);
-      alert('Allocation failed: ' + error.message);
+      toast.error('Allocation failed: ' + error.message);
     }
   };
 
@@ -1275,10 +1331,10 @@ Please provide a JSON response with ONLY the classroom allocation:
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Professor Dashboard</h1>
               <p className="text-gray-600">{user.name} - {user.designation}</p>
-              <div className="text-xs text-orange-600">Instant AI Allocation • Timetable Conflict Detection</div>
+              <div className="text-xs text-green-600">Firebase Backend • Real-time AI Allocation • Timetable Conflict Detection</div>
             </div>
             <button
-              onClick={logout}
+              onClick={handleLogout}
               className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md transition"
             >
               Logout
@@ -1305,7 +1361,7 @@ Please provide a JSON response with ONLY the classroom allocation:
             </div>
 
             <div className="mb-4 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
-              <strong>How it works:</strong> Select a day and get instant AI-powered classroom allocation!
+              <strong>How it works:</strong> Select a day and get instant AI-powered classroom allocation with Firebase backend!
             </div>
 
             <div className="space-y-3">
@@ -1504,6 +1560,7 @@ Please provide a JSON response with ONLY the classroom allocation:
           <div className="bg-white rounded-lg p-6 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto mb-4"></div>
             <p className="text-gray-700">🤖 AI is finding the best classroom for you...</p>
+            {/* <p className="text-xs text-gray-500 mt-2">Firebase Backend Processing</p> */}
           </div>
         </div>
       )}
@@ -1513,7 +1570,19 @@ Please provide a JSON response with ONLY the classroom allocation:
 
 // Protected Route Component
 const ProtectedRoute = ({ children, requiredRole }) => {
-  const { user } = useAuth();
+  const { user, initializing } = useContext(AuthContext);
+ 
+  // Show loading spinner while initializing (checking localStorage)
+  if (initializing) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return <Navigate to="/login" replace />;
@@ -1525,7 +1594,6 @@ const ProtectedRoute = ({ children, requiredRole }) => {
 
   return children;
 };
-
 // Main App Component
 function App() {
   return (
@@ -1554,6 +1622,7 @@ function App() {
           </Routes>
         </BrowserRouter>
       </AuthProvider>
+      <Toaster/>
     </div>
   );
 }
