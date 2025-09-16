@@ -480,7 +480,7 @@ const AdminDashboard = () => {
         
         // Send token email via backend server
         try {
-          await axios.post("http://65.2.168.5:8080/send-mail", {
+          const res = await axios.post("http://65.2.168.5:8080/send-mail", {
             "message": `Dear ${newItem.name}, Your login token for the Exam Proctor System is: ${newItem.token} Please use this token to access your dashboard. Best regards...`,
             "to": newItem.email
           }, {
@@ -488,6 +488,8 @@ const AdminDashboard = () => {
               "Content-type": "application/json"
             }
           });
+          console.log(res.data);
+          
         } catch (error) {
           console.error('Error sending email via backend:', error);
         }
