@@ -3,6 +3,8 @@ import "./App.css";
 import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import axios from "axios"
 import toast, { Toaster } from 'react-hot-toast';
+import { FaRegEye as EyeOpen } from "react-icons/fa";
+import { FaRegEyeSlash as EyeClose } from "react-icons/fa";
 
 const FIREBASE_URL = "https://exam-proctor-42c7f-default-rtdb.firebaseio.com/";
 
@@ -281,6 +283,7 @@ const Login = () => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
   const {login, loading} = useContext(AuthContext)
+  const [showPassword, SetShowPassword] = useState(false)
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -344,15 +347,20 @@ const Login = () => {
                   required
                 />
               </div>
-              <div>
+              <div >
                 <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <div  className="relative ">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={credentials.password}
                   onChange={(e) => setCredentials({...credentials, password: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   required
-                />
+                  />
+                <div className="absolute top-[50%] translate-y-[-50%] right-3">
+                  {showPassword === false ? <EyeClose className="cursor-pointer" onClick={()=>SetShowPassword(true)}/> : <EyeOpen className="cursor-pointer" onClick={()=>SetShowPassword(false)}/>}
+                </div>
+                  </div>
               </div>
             </>
           ) : (
@@ -667,6 +675,26 @@ const AdminDashboard = () => {
                   />
                 </div>
                 <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                  <input
+                    type="time"
+                    value={forms.examSlot.start_time}
+                    onChange={(e) => setForms({...forms, examSlot: {...forms.examSlot, start_time: e.target.value}})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                  <input
+                    type="time"
+                    value={forms.examSlot.end_time}
+                    onChange={(e) => setForms({...forms, examSlot: {...forms.examSlot, end_time: e.target.value}})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
                   <input
                     type="text"
@@ -694,6 +722,7 @@ const AdminDashboard = () => {
                   <div key={slot.id} className="border border-gray-200 rounded-md p-3 bg-green-50">
                     <h3 className="font-medium text-green-900">{slot.subject}</h3>
                     <p className="text-sm text-green-700">{slot.day}, {slot.date}</p>
+                    <p className="text-sm text-green-700">Start Time: {slot.start_time}, End Time: {slot.end_time}</p>
                   </div>
                 ))}
               </div>
@@ -1510,6 +1539,7 @@ Please provide a JSON response with ONLY the classroom allocation:
                 <h3 className="font-medium text-blue-900">{slot.subject}</h3>
                 <p className="text-sm text-blue-700">{slot.day}</p>
                 <p className="text-sm text-blue-600">{slot.date}</p>
+                <p className="text-sm text-blue-600">Start Time: {slot.start_time} End Time: {slot.end_time}</p>
               </div>
             ))}
           </div>
