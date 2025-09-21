@@ -9,7 +9,7 @@ import { FaRegEyeSlash as EyeClose } from "react-icons/fa";
 const FIREBASE_URL = "https://exam-proctor-42c7f-default-rtdb.firebaseio.com/";
 
 
-const GEMINI_API_KEY = "AIzaSyApWnqtylnOGz1DDU4DfCv2rnpRKTvmGxI";
+const GEMINI_API_KEY = "AIzaSyDiOkS6DK8PrYGKU_pYxQwGlIuyD9mGX-Q";
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
 
 
