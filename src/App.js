@@ -1864,53 +1864,35 @@ const ProfessorDashboard = () => {
         )
       );
 
-      // Add the sender (who gave up their slot) to emergency pool
-      // const newEmergencyEntry = {
-      //   id: generateId(),
-      //   professor_id: request.sender_professor_id,
-      //   professor_name: request.sender_professor_name,
-      //   department: request.sender_professor_department,
-      //   designation: "", // Can be fetched from professors table if needed
-      //   email: request.sender_professor_email,
-      //   phone: request.sender_professor_phone,
-      //   requested_day: request.sender_allocation.day,
-      //   requested_date: request.sender_allocation.date,
-      //   exam_subject: request.sender_allocation.subject,
-      //   reason: `Swapped slot with ${user.name}. Now in emergency pool.`,
-      //   status: "waiting",
-      //   created_at: new Date().toISOString(),
-      //   swapped_with: user.name,
-      // };
-
-      // await DatabaseService.addToEmergencyPool(newEmergencyEntry);
-
       // Send confirmation emails
-      console.log(request.sender_professor_email);
-      console.log(user.email);
-
       await sendEmail(
         request.sender_professor_email,
-        "Swap Request Accepted - You're in Emergency Pool",
-        `Dear ${request.sender_professor_name},\n\n${user.name} has accepted your swap request!\n\n❌ You have given up:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n\n⚠️ You have been added to the emergency pool. Admin will help assign you another slot soon.\n\nThank you for helping a colleague!\n\nBest regards,\nExam Proctor System`
-      ),
-        await sendMailBackend(
-          request.sender_professor_email,
-          "Swap Request Accepted - You're in Emergency Pool",
-          `Dear ${request.sender_professor_name},\n\n${user.name} has accepted your swap request!\n\n❌ You have given up:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n\n⚠️ You have been added to the emergency pool. Admin will help assign you another slot soon.\n\nThank you for helping a colleague!\n\nBest regards,\nExam Proctor System`
-        ),
-        await sendEmail(
-          user.email,
-          "🎉 Swap Accepted - You Got a Classroom!",
-          `Dear ${user.name},\n\nCongratulations! You have successfully accepted a swap and are now OUT of the emergency pool!\n\n✅ Your New Assignment:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n🏢 Floor: ${request.sender_allocation.floor}\n🚪 Room: ${request.sender_allocation.room_number}\n\nPlease be present 15 minutes before the exam starts.\n\nBest regards,\nExam Proctor System`
-        ),
-        await sendMailBackend(
-          user.email,
-          "🎉 Swap Accepted - You Got a Classroom!",
-          `Dear ${user.name},\n\nCongratulations! You have successfully accepted a swap and are now OUT of the emergency pool!\n\n✅ Your New Assignment:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n🏢 Floor: ${request.sender_allocation.floor}\n🚪 Room: ${request.sender_allocation.room_number}\n\nPlease be present 15 minutes before the exam starts.\n\nBest regards,\nExam Proctor System`
-        ),
-        toast.success(
-          `🎉 Swap successful! You now have ${request.sender_allocation.classroom_name} for ${request.sender_allocation.subject}!`
-        );
+        "Swap Request Accepted",
+        `Dear ${request.sender_professor_name},\n\n${user.name} has accepted your swap request!\n\n❌ You have given up:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n\nThank you for helping a colleague!\n\nBest regards,\nExam Proctor System`
+      );
+
+      await sendMailBackend(
+        request.sender_professor_email,
+        "Swap Request Accepted",
+        `Dear ${request.sender_professor_name},\n\n${user.name} has accepted your swap request!\n\n❌ You have given up:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n\nThank you for helping a colleague!\n\nBest regards,\nExam Proctor System`
+      );
+
+      await sendEmail(
+        user.email,
+        "🎉 Swap Accepted - You Got a Classroom!",
+        `Dear ${user.name},\n\nCongratulations! You have successfully accepted a swap and are now OUT of the emergency pool!\n\n✅ Your New Assignment:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n🏢 Floor: ${request.sender_allocation.floor}\n🚪 Room: ${request.sender_allocation.room_number}\n\nPlease be present 15 minutes before the exam starts.\n\nBest regards,\nExam Proctor System`
+      );
+
+      await sendMailBackend(
+        user.email,
+        "🎉 Swap Accepted - You Got a Classroom!",
+        `Dear ${user.name},\n\nCongratulations! You have successfully accepted a swap and are now OUT of the emergency pool!\n\n✅ Your New Assignment:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n🏢 Floor: ${request.sender_allocation.floor}\n🚪 Room: ${request.sender_allocation.room_number}\n\nPlease be present 15 minutes before the exam starts.\n\nBest regards,\nExam Proctor System`
+      );
+
+      toast.success(
+        `🎉 Swap successful! You now have ${request.sender_allocation.classroom_name} for ${request.sender_allocation.subject}!`
+      );
+
       await loadData();
     } catch (error) {
       console.error("Error accepting swap request:", error);
