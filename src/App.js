@@ -150,6 +150,15 @@ const DatabaseService = {
   // Email Log
   getEmailLog: () => FirebaseAPI.get("emailLog"),
   addEmailLog: (email) => FirebaseAPI.post("emailLog", email),
+  // Add this to DatabaseService (around line 157)
+  updateEmergencyPool: (id, entry) =>
+    FirebaseAPI.patch(`emergencyPool/${id}`, entry),
+  // Swap Requests
+  getSwapRequests: () => FirebaseAPI.get("swapRequests"),
+  addSwapRequest: (request) => FirebaseAPI.post("swapRequests", request),
+  deleteSwapRequest: (id) => FirebaseAPI.delete(`swapRequests/${id}`),
+  updateSwapRequest: (id, request) =>
+    FirebaseAPI.patch(`swapRequests/${id}`, request),
 };
 
 const generateId = () => {
@@ -174,6 +183,30 @@ const sendEmail = async (to, subject, body) => {
   } catch (error) {
     console.error("Error logging email:", error);
     return newEmail;
+  }
+};
+
+const sendMailBackend = async (to, subject, body) => {
+  try {
+    // 65.2.168.5 aws
+    const res = await axios.post(
+      "http://65.2.168.5:8080/send-mail",
+      {
+        to: to,
+        subject: subject,
+        message: body,
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    console.log("Mail sent successfully:", res.data);
+    return res.data;
+  } catch (error) {
+    console.error("Error sending mail:", error);
+    throw error;
   }
 };
 
@@ -586,6 +619,11 @@ const AdminDashboard = () => {
           "Your Exam Proctor Login Token",
           `Dear ${newItem.name},\n\nYour login token for the Exam Proctor System is: ${newItem.token}\n\nPlease use this token to access your dashboard.\n\nBest regards,\nExam Proctor System`
         );
+        await sendMailBackend(
+          newItem.email,
+          "Your Exam Proctor Login Token",
+          `Dear ${newItem.name},\n\nYour login token for the Exam Proctor System is: ${newItem.token}\n\nPlease use this token to access your dashboard.\n\nBest regards,\nExam Proctor System`
+        );
       }
 
       // Add day name for exam slots
@@ -977,8 +1015,29 @@ const AdminDashboard = () => {
                       required
                     />
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Phone Number
+                    </label>
+                    <input
+                      type="number"
+                      value={forms.professor.phone}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value.length <= 10) {
+                          setForms({
+                            ...forms,
+                            professor: {
+                              ...forms.professor,
+                              phone: value,
+                            },
+                          });
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      required
+                    />
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Designation
@@ -1005,6 +1064,8 @@ const AdminDashboard = () => {
                       <option value="Professor">Professor</option>
                     </select>
                   </div>
+                </div>
+                <div className="grid grid-cols-1 mb-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Department
@@ -1037,7 +1098,9 @@ const AdminDashboard = () => {
                   disabled={loading}
                   className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-2 px-4 rounded-md transition"
                 >
-                  Add Professor (Auto-send token email)
+                  {loading
+                    ? "Loading..."
+                    : "Add Professor (Auto-send token email)"}
                 </button>
               </form>
             </div>
@@ -1056,7 +1119,12 @@ const AdminDashboard = () => {
                     <p className="text-sm text-purple-700">
                       {prof.designation} - {prof.department}
                     </p>
-                    <p className="text-sm text-purple-600">{prof.email}</p>
+                    <p className="text-sm text-purple-600">
+                      Email: {prof.email}
+                    </p>
+                    <p className="text-sm text-purple-600">
+                      Phone Number: {prof.phone}
+                    </p>
                     <p className="text-xs text-purple-500 mt-1 font-mono">
                       Token: {prof.token}
                     </p>
@@ -1157,6 +1225,9 @@ const AdminDashboard = () => {
                       </h3>
                       <p className="text-sm text-orange-700">
                         {prof.department} Department
+                      </p>
+                      <p className="text-sm text-orange-700">
+                        Phone: {prof.phone}
                       </p>
                       <p className="text-xs text-orange-600">{prof.reason}</p>
                     </div>
@@ -1490,6 +1561,12 @@ const AdminDashboard = () => {
 
 // Professor Dashboard
 const ProfessorDashboard = () => {
+  const [swapRequests, setSwapRequests] = useState([]);
+  const [myPendingRequests, setMyPendingRequests] = useState([]);
+  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [selectedAllocation, setSelectedAllocation] = useState(null);
+  const [availableProfessors, setAvailableProfessors] = useState([]);
+
   const [examSlots, setExamSlots] = useState([]);
   const [myAllocations, setMyAllocations] = useState([]);
   const [myTimetable, setMyTimetable] = useState([]);
@@ -1520,13 +1597,19 @@ const ProfessorDashboard = () => {
 
   const loadData = async () => {
     try {
-      const [slotsData, allocationsData, timetablesData, poolData] =
-        await Promise.all([
-          DatabaseService.getExamSlots(),
-          DatabaseService.getAllocations(),
-          DatabaseService.getTimetables(),
-          DatabaseService.getEmergencyPool(),
-        ]);
+      const [
+        slotsData,
+        allocationsData,
+        timetablesData,
+        poolData,
+        swapRequestsData,
+      ] = await Promise.all([
+        DatabaseService.getExamSlots(),
+        DatabaseService.getAllocations(),
+        DatabaseService.getTimetables(),
+        DatabaseService.getEmergencyPool(),
+        DatabaseService.getSwapRequests(),
+      ]);
 
       setExamSlots(firebaseToArray(slotsData));
       setEmergencyPool(firebaseToArray(poolData));
@@ -1538,9 +1621,335 @@ const ProfessorDashboard = () => {
 
       const allTimetables = firebaseToArray(timetablesData);
       setMyTimetable(allTimetables.filter((tt) => tt.professor_id === user.id));
+
+      // Load swap requests
+      const allSwapRequests = firebaseToArray(swapRequestsData);
+
+      // Requests I received from others
+      const receivedRequests = allSwapRequests.filter(
+        (req) => req.target_professor_id === user.id && req.status === "pending"
+      );
+      setSwapRequests(receivedRequests);
+
+      // Requests I sent to others
+      const sentRequests = allSwapRequests.filter(
+        (req) => req.sender_professor_id === user.id && req.status === "pending"
+      );
+      setMyPendingRequests(sentRequests);
     } catch (error) {
       console.error("Error loading professor data:", error);
       toast.error("Error loading data");
+    }
+  };
+
+  const openSwapModal = async (allocation) => {
+    setSelectedAllocation(allocation);
+    setShowSwapModal(true);
+
+    try {
+      const [emergencyPoolData, professorsData, swapRequestsData] =
+        await Promise.all([
+          DatabaseService.getEmergencyPool(),
+          DatabaseService.getProfessors(),
+          DatabaseService.getSwapRequests(),
+        ]);
+
+      const allEmergencyPool = firebaseToArray(emergencyPoolData);
+      const allProfessors = firebaseToArray(professorsData);
+      const allSwapRequests = firebaseToArray(swapRequestsData);
+
+      console.log("Emergency Pool:", allEmergencyPool);
+      console.log("All Professors:", allProfessors);
+      console.log("Current User ID:", user.id);
+
+      // Filter emergency pool to get only waiting/pending professors (exclude current user)
+      const emergencyProfessors = allEmergencyPool
+        .filter((entry) => {
+          // Only waiting status entries
+          if (entry.status !== "waiting") return false;
+
+          // Exclude current user if they're in emergency pool
+          if (entry.professor_id === user.id) return false;
+
+          // Check if already sent a request to this professor for this allocation
+          const alreadySentRequest = allSwapRequests.some(
+            (req) =>
+              req.sender_professor_id === user.id &&
+              req.target_professor_id === entry.professor_id &&
+              req.sender_allocation_id === allocation.id &&
+              req.status === "pending"
+          );
+
+          return !alreadySentRequest;
+        })
+        .map((entry) => {
+          // Find full professor details
+          const profDetails = allProfessors.find(
+            (p) => p.id === entry.professor_id
+          );
+
+          return {
+            ...profDetails,
+            emergency_entry: entry,
+            requested_day: entry.requested_day,
+            requested_date: entry.requested_date,
+            exam_subject: entry.exam_subject,
+            emergency_reason: entry.reason,
+          };
+        })
+        .filter((prof) => prof.id); // Filter out any null results
+
+      console.log(
+        "Emergency Professors available for swap:",
+        emergencyProfessors
+      );
+      setAvailableProfessors(emergencyProfessors);
+    } catch (error) {
+      console.error("Error loading emergency pool professors:", error);
+      toast.error("Error loading emergency pool professors");
+    }
+  };
+
+  const sendSwapRequest = async (targetProfessor) => {
+    try {
+      // Check if request already exists
+      const existingRequests = await DatabaseService.getSwapRequests();
+      const requestsArray = firebaseToArray(existingRequests);
+
+      const alreadyExists = requestsArray.some(
+        (req) =>
+          req.sender_professor_id === user.id &&
+          req.target_professor_id === targetProfessor.id &&
+          req.sender_allocation_id === selectedAllocation.id &&
+          req.status === "pending"
+      );
+
+      if (alreadyExists) {
+        toast.error(
+          "You already sent a swap request to this professor for this slot!"
+        );
+        return;
+      }
+
+      // Generate unique request ID
+      const requestId = `${user.name.replace(
+        /\s+/g,
+        ""
+      )}_${selectedAllocation.subject.replace(/\s+/g, "")}_${
+        user.phone
+      }_${Date.now()}`;
+
+      const swapRequest = {
+        id: requestId,
+        sender_professor_id: user.id,
+        sender_professor_name: user.name,
+        sender_professor_phone: user.phone,
+        sender_professor_email: user.email,
+        sender_professor_department: user.department,
+        sender_allocation_id: selectedAllocation.id,
+        sender_allocation: {
+          day: selectedAllocation.day,
+          date: selectedAllocation.date,
+          subject: selectedAllocation.subject,
+          classroom_name: selectedAllocation.classroom_name,
+          classroom_id: selectedAllocation.classroom_id,
+          classroom_department: selectedAllocation.classroom_department,
+          floor: selectedAllocation.floor,
+          room_number: selectedAllocation.room_number,
+        },
+        target_professor_id: targetProfessor.id,
+        target_professor_name: targetProfessor.name,
+        target_professor_email: targetProfessor.email,
+        target_professor_phone: targetProfessor.phone,
+        target_professor_department: targetProfessor.department,
+        target_emergency_entry_id: targetProfessor.emergency_entry.id,
+        target_emergency_entry_firebase_id:
+          targetProfessor.emergency_entry.firebaseId,
+        target_requested_day: targetProfessor.requested_day,
+        target_requested_date: targetProfessor.requested_date,
+        target_exam_subject: targetProfessor.exam_subject,
+        status: "pending",
+        created_at: new Date().toISOString(),
+      };
+
+      await DatabaseService.addSwapRequest(swapRequest);
+
+      // Send email notification to emergency pool professor
+      await sendEmail(
+        targetProfessor.email,
+        "🎉 Exam Slot Swap Offer - You Can Get a Classroom!",
+        `Dear ${targetProfessor.name},\n\nGreat news! Professor ${user.name} is offering to swap their exam slot with you.\n\n✅ YOU WILL GET:\n📅 Day: ${selectedAllocation.day}\n📆 Date: ${selectedAllocation.date}\n📚 Subject: ${selectedAllocation.subject}\n🏫 Classroom: ${selectedAllocation.classroom_name}\n🏢 Floor: ${selectedAllocation.floor}\n🚪 Room: ${selectedAllocation.room_number}\n🏛️ Department: ${selectedAllocation.classroom_department}\n\n📋 YOUR ORIGINAL REQUEST:\n📅 Day: ${targetProfessor.requested_day}\n📆 Date: ${targetProfessor.requested_date}\n📚 Subject: ${targetProfessor.exam_subject}\n\nPlease login to your dashboard to accept or reject this swap offer.\n\nThis is a great opportunity to get out of the emergency pool!\n\nBest regards,\nExam Proctor System`
+      );
+      await sendMailBackend(
+        targetProfessor.email,
+        "🎉 Exam Slot Swap Offer - You Can Get a Classroom!",
+        `Dear ${targetProfessor.name},\n\nGreat news! Professor ${user.name} is offering to swap their exam slot with you.\n\n✅ YOU WILL GET:\n📅 Day: ${selectedAllocation.day}\n📆 Date: ${selectedAllocation.date}\n📚 Subject: ${selectedAllocation.subject}\n🏫 Classroom: ${selectedAllocation.classroom_name}\n🏢 Floor: ${selectedAllocation.floor}\n🚪 Room: ${selectedAllocation.room_number}\n🏛️ Department: ${selectedAllocation.classroom_department}\n\n📋 YOUR ORIGINAL REQUEST:\n📅 Day: ${targetProfessor.requested_day}\n📆 Date: ${targetProfessor.requested_date}\n📚 Subject: ${targetProfessor.exam_subject}\n\nPlease login to your dashboard to accept or reject this swap offer.\n\nThis is a great opportunity to get out of the emergency pool!\n\nBest regards,\nExam Proctor System`
+      );
+
+      toast.success(
+        `Swap request sent to ${targetProfessor.name} from emergency pool!`
+      );
+      setShowSwapModal(false);
+      await loadData();
+    } catch (error) {
+      console.error("Error sending swap request:", error);
+      toast.error("Error sending swap request");
+    }
+  };
+
+  const acceptSwapRequest = async (request) => {
+    try {
+      // Get the sender's allocation details
+      const allocationsData = await DatabaseService.getAllocations();
+      const allAllocations = firebaseToArray(allocationsData);
+
+      const senderAllocation = allAllocations.find(
+        (alloc) => alloc.id === request.sender_allocation_id
+      );
+
+      if (!senderAllocation) {
+        toast.error("Sender's allocation not found!");
+        return;
+      }
+
+      // Update the allocation to assign it to the emergency pool professor (current user)
+      const updatedAllocation = {
+        ...senderAllocation,
+        professor_id: user.id,
+        professor_name: user.name,
+        professor_department: user.department,
+        status: "assigned",
+        swapped_from: request.sender_professor_name,
+        swapped_at: new Date().toISOString(),
+      };
+
+      // Update the allocation in Firebase
+      await DatabaseService.updateAllocation(
+        senderAllocation.firebaseId,
+        updatedAllocation
+      );
+
+      // Get current user's emergency pool entry
+      const emergencyPoolData = await DatabaseService.getEmergencyPool();
+      const allEmergencyPool = firebaseToArray(emergencyPoolData);
+
+      const myEmergencyEntry = allEmergencyPool.find(
+        (entry) => entry.professor_id === user.id && entry.status === "waiting"
+      );
+
+      // Update emergency pool status to 'resolved'
+      if (myEmergencyEntry) {
+        await DatabaseService.updateEmergencyPool(myEmergencyEntry.firebaseId, {
+          ...myEmergencyEntry,
+          status: "resolved",
+          resolved_at: new Date().toISOString(),
+          resolved_by: "swap",
+          swapped_with: request.sender_professor_name,
+        });
+      }
+
+      // Delete ALL pending swap requests for this sender's allocation
+      const allSwapRequests = await DatabaseService.getSwapRequests();
+      const swapRequestsArray = firebaseToArray(allSwapRequests);
+
+      const requestsToDelete = swapRequestsArray.filter(
+        (req) =>
+          req.sender_allocation_id === request.sender_allocation_id &&
+          req.status === "pending"
+      );
+
+      await Promise.all(
+        requestsToDelete.map((req) =>
+          DatabaseService.deleteSwapRequest(req.firebaseId)
+        )
+      );
+
+      // Add the sender (who gave up their slot) to emergency pool
+      // const newEmergencyEntry = {
+      //   id: generateId(),
+      //   professor_id: request.sender_professor_id,
+      //   professor_name: request.sender_professor_name,
+      //   department: request.sender_professor_department,
+      //   designation: "", // Can be fetched from professors table if needed
+      //   email: request.sender_professor_email,
+      //   phone: request.sender_professor_phone,
+      //   requested_day: request.sender_allocation.day,
+      //   requested_date: request.sender_allocation.date,
+      //   exam_subject: request.sender_allocation.subject,
+      //   reason: `Swapped slot with ${user.name}. Now in emergency pool.`,
+      //   status: "waiting",
+      //   created_at: new Date().toISOString(),
+      //   swapped_with: user.name,
+      // };
+
+      // await DatabaseService.addToEmergencyPool(newEmergencyEntry);
+
+      // Send confirmation emails
+      console.log(request.sender_professor_email);
+      console.log(user.email);
+
+      await sendEmail(
+        request.sender_professor_email,
+        "Swap Request Accepted - You're in Emergency Pool",
+        `Dear ${request.sender_professor_name},\n\n${user.name} has accepted your swap request!\n\n❌ You have given up:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n\n⚠️ You have been added to the emergency pool. Admin will help assign you another slot soon.\n\nThank you for helping a colleague!\n\nBest regards,\nExam Proctor System`
+      ),
+        await sendMailBackend(
+          request.sender_professor_email,
+          "Swap Request Accepted - You're in Emergency Pool",
+          `Dear ${request.sender_professor_name},\n\n${user.name} has accepted your swap request!\n\n❌ You have given up:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n\n⚠️ You have been added to the emergency pool. Admin will help assign you another slot soon.\n\nThank you for helping a colleague!\n\nBest regards,\nExam Proctor System`
+        ),
+        await sendEmail(
+          user.email,
+          "🎉 Swap Accepted - You Got a Classroom!",
+          `Dear ${user.name},\n\nCongratulations! You have successfully accepted a swap and are now OUT of the emergency pool!\n\n✅ Your New Assignment:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n🏢 Floor: ${request.sender_allocation.floor}\n🚪 Room: ${request.sender_allocation.room_number}\n\nPlease be present 15 minutes before the exam starts.\n\nBest regards,\nExam Proctor System`
+        ),
+        await sendMailBackend(
+          user.email,
+          "🎉 Swap Accepted - You Got a Classroom!",
+          `Dear ${user.name},\n\nCongratulations! You have successfully accepted a swap and are now OUT of the emergency pool!\n\n✅ Your New Assignment:\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n🏫 Classroom: ${request.sender_allocation.classroom_name}\n🏢 Floor: ${request.sender_allocation.floor}\n🚪 Room: ${request.sender_allocation.room_number}\n\nPlease be present 15 minutes before the exam starts.\n\nBest regards,\nExam Proctor System`
+        ),
+        toast.success(
+          `🎉 Swap successful! You now have ${request.sender_allocation.classroom_name} for ${request.sender_allocation.subject}!`
+        );
+      await loadData();
+    } catch (error) {
+      console.error("Error accepting swap request:", error);
+      toast.error("Error accepting swap request");
+    }
+  };
+
+  const rejectSwapRequest = async (request) => {
+    try {
+      await DatabaseService.deleteSwapRequest(request.firebaseId);
+
+      // Send rejection email
+      await sendEmail(
+        request.sender_professor_email,
+        "Swap Request Rejected",
+        `Dear ${request.sender_professor_name},\n\nYour swap request has been rejected by ${user.name}.\n\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n\nBest regards,\nExam Proctor System`
+      );
+      await sendMailBackend(
+        request.sender_professor_email,
+        "Swap Request Rejected",
+        `Dear ${request.sender_professor_name},\n\nYour swap request has been rejected by ${user.name}.\n\n📅 Day: ${request.sender_allocation.day}\n📆 Date: ${request.sender_allocation.date}\n📚 Subject: ${request.sender_allocation.subject}\n\nBest regards,\nExam Proctor System`
+      );
+
+      toast.success("Swap request rejected!");
+      await loadData();
+    } catch (error) {
+      console.error("Error rejecting swap request:", error);
+      toast.error("Error rejecting swap request");
+    }
+  };
+
+  const cancelSwapRequest = async (request) => {
+    try {
+      await DatabaseService.deleteSwapRequest(request.firebaseId);
+      toast.success("Swap request cancelled!");
+      await loadData();
+    } catch (error) {
+      console.error("Error cancelling swap request:", error);
+      toast.error("Error cancelling swap request");
     }
   };
 
@@ -2015,6 +2424,11 @@ const ProfessorDashboard = () => {
           "Exam Proctoring Assignment Confirmation - INSTANT ALLOCATION",
           `Dear ${user.name},\n\nYou have been instantly allocated for exam proctoring:\n\n📅 Date: ${randomSlot.date} (${selectedDay})\n📚 Subject: ${randomSlot.subject}\n🏛️ Department: ${selectedClassroom.department}\n🏫 Classroom: ${selectedClassroom.name}\n🏢 Floor: ${selectedClassroom.floor}\n🚪 Room Number: ${selectedClassroom.room_number}\n\n✅ Status: CONFIRMED\n\nPlease be present 15 minutes before the exam starts.\n\nBest regards,\nExam Proctor System`
         );
+        await sendMailBackend(
+          professor.email,
+          "Exam Proctoring Assignment Confirmation - INSTANT ALLOCATION",
+          `Dear ${user.name},\n\nYou have been instantly allocated for exam proctoring:\n\n📅 Date: ${randomSlot.date} (${selectedDay})\n📚 Subject: ${randomSlot.subject}\n🏛️ Department: ${selectedClassroom.department}\n🏫 Classroom: ${selectedClassroom.name}\n🏢 Floor: ${selectedClassroom.floor}\n🚪 Room Number: ${selectedClassroom.room_number}\n\n✅ Status: CONFIRMED\n\nPlease be present 15 minutes before the exam starts.\n\nBest regards,\nExam Proctor System`
+        );
       }
 
       await loadData();
@@ -2278,10 +2692,16 @@ const ProfessorDashboard = () => {
                     <p className="text-xs text-green-600">
                       Floor {allocation.floor}, Room {allocation.room_number}
                     </p>
-                    <div className="mt-1">
+                    <div className="mt-2 flex justify-between items-center">
                       <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
                         {allocation.status}
                       </span>
+                      <button
+                        onClick={() => openSwapModal(allocation)}
+                        className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded transition"
+                      >
+                        🔄 Request Swap
+                      </button>
                     </div>
                   </div>
                 ))
@@ -2324,12 +2744,139 @@ const ProfessorDashboard = () => {
                       <p className="text-sm text-orange-700">
                         {prof.department} Department
                       </p>
+                      <p className="text-sm text-orange-700">
+                        Phone Number: {prof.phone}
+                      </p>
                       <p className="text-xs text-orange-600">{prof.reason}</p>
                     </div>
                   ))}
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Received Swap Requests */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">
+              📨 Swap Requests Received ({swapRequests.length})
+            </h2>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {swapRequests.length === 0 ? (
+                <p className="text-gray-500 text-center py-8 text-sm">
+                  No swap requests received
+                </p>
+              ) : (
+                swapRequests.map((request) => (
+                  <div
+                    key={request.id}
+                    className="border border-blue-200 rounded-lg p-4 bg-blue-50"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-medium text-blue-900">
+                          From: {request.sender_professor_name}
+                        </h3>
+                        <p className="text-xs text-blue-600">
+                          {request.sender_professor_email}
+                        </p>
+                        <p className="text-xs text-blue-600">
+                          Phone: {request.sender_professor_phone}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="bg-white p-2 rounded mb-3">
+                      <p className="text-sm font-medium text-gray-900">
+                        They want to swap:
+                      </p>
+                      <p className="text-xs text-gray-700">
+                        📅 {request.sender_allocation.day},{" "}
+                        {request.sender_allocation.date}
+                      </p>
+                      <p className="text-xs text-gray-700">
+                        📚 {request.sender_allocation.subject}
+                      </p>
+                      <p className="text-xs text-gray-700">
+                        🏫 {request.sender_allocation.classroom_name} - Floor{" "}
+                        {request.sender_allocation.floor}, Room{" "}
+                        {request.sender_allocation.room_number}
+                      </p>
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => acceptSwapRequest(request)}
+                        className="flex-1 bg-green-500 hover:bg-green-600 text-white text-xs py-2 px-3 rounded transition"
+                      >
+                        ✓ Accept
+                      </button>
+                      <button
+                        onClick={() => rejectSwapRequest(request)}
+                        className="flex-1 bg-red-500 hover:bg-red-600 text-white text-xs py-2 px-3 rounded transition"
+                      >
+                        ✗ Reject
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Sent Swap Requests */}
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-xl font-semibold mb-4">
+              📤 Swap Requests Sent ({myPendingRequests.length})
+            </h2>
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {myPendingRequests.length === 0 ? (
+                <p className="text-gray-500 text-center py-8 text-sm">
+                  No pending requests sent
+                </p>
+              ) : (
+                myPendingRequests.map((request) => (
+                  <div
+                    key={request.id}
+                    className="border border-orange-200 rounded-lg p-4 bg-orange-50"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-medium text-orange-900">
+                          To: {request.target_professor_name}
+                        </h3>
+                        <p className="text-xs text-orange-600">
+                          {request.target_professor_email}
+                        </p>
+                      </div>
+                      <span className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full">
+                        Pending
+                      </span>
+                    </div>
+                    <div className="bg-white p-2 rounded mb-3">
+                      <p className="text-sm font-medium text-gray-900">
+                        Your slot:
+                      </p>
+                      <p className="text-xs text-gray-700">
+                        📅 {request.sender_allocation.day},{" "}
+                        {request.sender_allocation.date}
+                      </p>
+                      <p className="text-xs text-gray-700">
+                        📚 {request.sender_allocation.subject}
+                      </p>
+                      <p className="text-xs text-gray-700">
+                        🏫 {request.sender_allocation.classroom_name}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => cancelSwapRequest(request)}
+                      className="w-full bg-red-500 hover:bg-red-600 text-white text-xs py-2 px-3 rounded transition"
+                    >
+                      Cancel Request
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
 
@@ -2355,6 +2902,130 @@ const ProfessorDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* Swap Request Modal */}
+      {showSwapModal && selectedAllocation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-start mb-4">
+              <h3 className="text-lg font-semibold text-indigo-900">
+                🔄 Offer Slot Swap to Emergency Pool
+              </h3>
+              <button
+                onClick={() => setShowSwapModal(false)}
+                className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-orange-50 border-l-4 border-orange-500 p-4 mb-4">
+              <p className="text-sm text-orange-800">
+                <strong>ℹ️ Info:</strong> You're offering your classroom to
+                professors in the emergency pool who couldn't get a classroom.
+                If they accept, you'll swap positions with them.
+              </p>
+            </div>
+
+            <div className="bg-indigo-50 p-4 rounded-lg mb-4">
+              <h4 className="font-medium text-indigo-900 mb-2">
+                Your Current Slot (You'll Give This Up):
+              </h4>
+              <p className="text-sm text-indigo-700">
+                📅 {selectedAllocation.day}, {selectedAllocation.date}
+              </p>
+              <p className="text-sm text-indigo-700">
+                📚 {selectedAllocation.subject}
+              </p>
+              <p className="text-sm text-indigo-700">
+                🏫 {selectedAllocation.classroom_name} - Floor{" "}
+                {selectedAllocation.floor}, Room{" "}
+                {selectedAllocation.room_number}
+              </p>
+              <p className="text-xs text-orange-600 mt-2">
+                ⚠️ If accepted, you'll be moved to the emergency pool
+              </p>
+            </div>
+
+            <h4 className="font-medium text-gray-900 mb-3">
+              Professors in Emergency Pool (waiting for classroom):
+            </h4>
+
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {availableProfessors.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-500 mb-2">
+                    No professors in emergency pool
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    The emergency pool is empty. All professors have been
+                    assigned classrooms.
+                  </p>
+                </div>
+              ) : (
+                availableProfessors.map((prof) => (
+                  <div
+                    key={prof.id}
+                    className="border-2 border-orange-200 rounded-lg p-4 bg-orange-50 hover:bg-orange-100 transition"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="px-2 py-1 text-xs bg-orange-500 text-white rounded-full">
+                            Emergency Pool
+                          </span>
+                        </div>
+                        <h5 className="font-medium text-gray-900">
+                          {prof.name}
+                        </h5>
+                        <p className="text-sm text-gray-600">
+                          {prof.designation}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {prof.department} Department
+                        </p>
+                        <p className="text-xs text-gray-500">{prof.email}</p>
+                        <p className="text-xs text-gray-500">
+                          Phone: {prof.phone}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => sendSwapRequest(prof)}
+                        className="bg-orange-500 hover:bg-orange-600 text-white text-sm py-2 px-4 rounded transition whitespace-nowrap"
+                      >
+                        Offer Swap
+                      </button>
+                    </div>
+
+                    {/* Show what they requested */}
+                    <div className="mt-3 pt-3 border-t border-orange-300">
+                      <p className="text-xs font-medium text-orange-900 mb-2">
+                        They originally requested:
+                      </p>
+                      <div className="text-xs text-orange-800 bg-white p-2 rounded">
+                        📅 {prof.requested_day}, {prof.requested_date} | 📚{" "}
+                        {prof.exam_subject}
+                      </div>
+                      <p className="text-xs text-orange-700 mt-2">
+                        <strong>Reason:</strong> {prof.emergency_reason}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowSwapModal(false)}
+                className="bg-gray-500 hover:bg-gray-600 text-white py-2 px-6 rounded transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Conflict Modal */}
       {conflictModal.show && (
