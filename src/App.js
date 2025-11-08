@@ -195,7 +195,7 @@ const sendMailBackend = async (to, subject, body) => {
   try {
     // 65.2.168.5 aws
     const res = await axios.post(
-      "http://65.2.168.5:8080/send-mail",
+      "https://backend.aiproctor.store/send-mail",
       {
         to: to,
         subject: subject,
