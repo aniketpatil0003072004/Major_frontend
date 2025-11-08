@@ -1566,6 +1566,7 @@ const ProfessorDashboard = () => {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [selectedAllocation, setSelectedAllocation] = useState(null);
   const [availableProfessors, setAvailableProfessors] = useState([]);
+  const [emergencyMember, setEmergencymember] = useState(0);
 
   const [examSlots, setExamSlots] = useState([]);
   const [myAllocations, setMyAllocations] = useState([]);
@@ -1587,6 +1588,9 @@ const ProfessorDashboard = () => {
   };
 
   // Timetable form state
+  const [inputMethod, setInputMethod] = useState("manual");
+  const [uploadedFile, setUploadedFile] = useState(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [timetableForm, setTimetableForm] = useState({
     day: "",
     subject: "",
@@ -1941,8 +1945,18 @@ const ProfessorDashboard = () => {
     }
   }, [user]);
 
-  const addToTimetable = async (e) => {
-    e.preventDefault();
+  const addToTimetable = async () => {
+    if (
+      !timetableForm.day ||
+      !timetableForm.subject ||
+      !timetableForm.start_time ||
+      !timetableForm.end_time ||
+      !timetableForm.semester
+    ) {
+      toast.error("Please fill all fields");
+      return;
+    }
+
     try {
       const newEntry = {
         id: generateId(),
@@ -1965,6 +1979,130 @@ const ProfessorDashboard = () => {
     } catch (error) {
       console.error("Error adding timetable entry:", error);
       toast.error("Error adding timetable entry");
+    }
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("File size must be less than 10MB");
+        return;
+      }
+      setUploadedFile(file);
+    }
+  };
+
+  const processUploadedTimetable = async () => {
+    if (!uploadedFile) return;
+
+    setIsProcessing(true);
+    try {
+      // Dynamically import the Generative AI package
+      const { GoogleGenerativeAI } = await import(
+        "https://esm.run/@google/generative-ai"
+      );
+
+      // Initialize the API with your key
+      const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+      // Convert file to base64
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(uploadedFile);
+      });
+
+      // Determine media type
+      const mimeType =
+        uploadedFile.type ||
+        (uploadedFile.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg");
+
+      // Prepare the prompt
+      const prompt = `Extract the timetable information from this image/document. 
+Return ONLY a valid JSON array with the following structure:
+[
+  {
+    "day": "Monday/Tuesday/etc",
+    "subject": "subject name",
+    "start_time": "HH:MM" (24-hour format),
+    "end_time": "HH:MM" (24-hour format),
+    "semester": "semester name/number"
+  }
+]
+Do not include any markdown formatting, code blocks, or explanatory text. Return only the raw JSON array.`;
+
+      // Prepare the image/document part
+      const imagePart = {
+        inlineData: {
+          data: base64Data,
+          mimeType: mimeType,
+        },
+      };
+
+      // Generate content with the model
+      const result = await model.generateContent([prompt, imagePart]);
+      const response = await result.response;
+      const textResponse = response.text();
+
+      // Clean the response - remove markdown code blocks if present
+      let cleanedResponse = textResponse.trim();
+      cleanedResponse = cleanedResponse
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "");
+
+      // Parse the JSON response
+      const extractedEntries = JSON.parse(cleanedResponse);
+
+      // Validate and add entries to timetable
+      if (Array.isArray(extractedEntries) && extractedEntries.length > 0) {
+        let addedCount = 0;
+
+        for (const entry of extractedEntries) {
+          // Validate required fields
+          if (
+            entry.day &&
+            entry.subject &&
+            entry.start_time &&
+            entry.end_time &&
+            entry.semester
+          ) {
+            const newEntry = {
+              id: generateId(),
+              professor_id: user.id,
+              day: entry.day,
+              subject: entry.subject,
+              start_time: entry.start_time,
+              end_time: entry.end_time,
+              semester: entry.semester,
+              created_at: new Date().toISOString(),
+            };
+
+            await DatabaseService.addTimetable(newEntry);
+            addedCount++;
+          }
+        }
+
+        if (addedCount > 0) {
+          await loadData();
+          toast.success(`Successfully added ${addedCount} timetable entries!`);
+          setUploadedFile(null);
+          setInputMethod("manual");
+        } else {
+          toast.error("No valid entries found in the extracted data");
+        }
+      } else {
+        toast.error(
+          "Could not extract timetable data. Please try again or enter manually."
+        );
+      }
+    } catch (error) {
+      console.error("Error processing timetable:", error);
+      toast.error("Error extracting timetable. Please try manual entry.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -2181,6 +2319,17 @@ const ProfessorDashboard = () => {
   //       toast.error("Allocation failed: " + error.message);
   //     }
   //   };
+
+  useEffect(() => {
+    const num = emergencyPool.reduce((acc, emp) => {
+      if (!emp.status) {
+        return acc + 1;
+      } else {
+        return acc;
+      }
+    }, 0);
+    setEmergencymember(num);
+  }, []);
 
   const performInstantAllocation = async (selectedDay) => {
     try {
@@ -2527,121 +2676,259 @@ const ProfessorDashboard = () => {
           </div>
 
           {/* My Timetable */}
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-xl font-semibold mb-4">
-              📅 My Teaching Timetable
-            </h2>
+          <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+            <div className="max-w-4xl mx-auto">
+              <div className="bg-white p-6 rounded-lg shadow-lg">
+                <h2 className="text-2xl font-bold mb-6 text-gray-800">
+                  📅 My Teaching Timetable
+                </h2>
 
-            {/* Add Timetable Entry */}
-            <form
-              onSubmit={addToTimetable}
-              className="mb-4 p-3 bg-gray-50 rounded-lg"
-            >
-              <h3 className="font-medium text-gray-700 mb-2">
-                Add Class Schedule
-              </h3>
-              <div className="space-y-2">
-                <select
-                  value={timetableForm.day}
-                  onChange={(e) =>
-                    setTimetableForm({ ...timetableForm, day: e.target.value })
-                  }
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                  required
-                >
-                  <option value="">Select Day</option>
-                  <option value="Monday">Monday</option>
-                  <option value="Tuesday">Tuesday</option>
-                  <option value="Wednesday">Wednesday</option>
-                  <option value="Thursday">Thursday</option>
-                  <option value="Friday">Friday</option>
-                  <option value="Saturday">Saturday</option>
-                </select>
-                <input
-                  type="text"
-                  placeholder="Subject"
-                  value={timetableForm.subject}
-                  onChange={(e) =>
-                    setTimetableForm({
-                      ...timetableForm,
-                      subject: e.target.value,
-                    })
-                  }
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                  required
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="time"
-                    value={timetableForm.start_time}
-                    onChange={(e) =>
-                      setTimetableForm({
-                        ...timetableForm,
-                        start_time: e.target.value,
-                      })
-                    }
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                    required
-                  />
-                  <input
-                    type="time"
-                    value={timetableForm.end_time}
-                    onChange={(e) =>
-                      setTimetableForm({
-                        ...timetableForm,
-                        end_time: e.target.value,
-                      })
-                    }
-                    className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                    required
-                  />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Semester"
-                  value={timetableForm.semester}
-                  onChange={(e) =>
-                    setTimetableForm({
-                      ...timetableForm,
-                      semester: e.target.value,
-                    })
-                  }
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                  required
-                />
-                <button
-                  type="submit"
-                  className="w-full bg-green-500 hover:bg-green-600 text-white py-1 px-2 rounded text-sm transition"
-                >
-                  Add to Timetable
-                </button>
-              </div>
-            </form>
-
-            {/* Timetable Display */}
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {myTimetable.length === 0 ? (
-                <p className="text-gray-500 text-center py-4 text-sm">
-                  No timetable entries yet
-                </p>
-              ) : (
-                myTimetable.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="border border-gray-200 rounded-md p-2 text-sm"
+                {/* Input Method Tabs */}
+                <div className="mb-4 flex border-b border-gray-300">
+                  <button
+                    onClick={() => setInputMethod("manual")}
+                    className={`px-4 py-2 text-sm font-medium ${
+                      inputMethod === "manual"
+                        ? "border-b-2 border-blue-500 text-blue-600"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
                   >
-                    <div className="font-medium">
-                      {entry.day} - {entry.subject}
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      {entry.start_time} - {entry.end_time}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {entry.semester} Semester
+                    Manual Entry
+                  </button>
+                  <button
+                    onClick={() => setInputMethod("upload")}
+                    className={`px-4 py-2 text-sm font-medium ${
+                      inputMethod === "upload"
+                        ? "border-b-2 border-blue-500 text-blue-600"
+                        : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    Upload Timetable
+                  </button>
+                </div>
+
+                {/* Manual Entry Form */}
+                {inputMethod === "manual" && (
+                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <h3 className="font-medium text-gray-700 mb-3">
+                      Add Class Schedule
+                    </h3>
+                    <div className="space-y-3">
+                      <select
+                        value={timetableForm.day}
+                        onChange={(e) =>
+                          setTimetableForm({
+                            ...timetableForm,
+                            day: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="">Select Day</option>
+                        <option value="Monday">Monday</option>
+                        <option value="Tuesday">Tuesday</option>
+                        <option value="Wednesday">Wednesday</option>
+                        <option value="Thursday">Thursday</option>
+                        <option value="Friday">Friday</option>
+                        <option value="Saturday">Saturday</option>
+                      </select>
+                      <input
+                        type="text"
+                        placeholder="Subject"
+                        value={timetableForm.subject}
+                        onChange={(e) =>
+                          setTimetableForm({
+                            ...timetableForm,
+                            subject: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="time"
+                          value={timetableForm.start_time}
+                          onChange={(e) =>
+                            setTimetableForm({
+                              ...timetableForm,
+                              start_time: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          type="time"
+                          value={timetableForm.end_time}
+                          onChange={(e) =>
+                            setTimetableForm({
+                              ...timetableForm,
+                              end_time: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Semester"
+                        value={timetableForm.semester}
+                        onChange={(e) =>
+                          setTimetableForm({
+                            ...timetableForm,
+                            semester: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <button
+                        onClick={addToTimetable}
+                        className="w-full bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md text-sm font-medium transition"
+                      >
+                        Add to Timetable
+                      </button>
                     </div>
                   </div>
-                ))
-              )}
+                )}
+
+                {/* Upload Timetable Form */}
+                {inputMethod === "upload" && (
+                  <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <h3 className="font-medium text-gray-700 mb-3">
+                      Upload Timetable PDF
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition">
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                          id="timetable-upload"
+                          disabled={isProcessing}
+                        />
+                        <label
+                          htmlFor="timetable-upload"
+                          className="cursor-pointer block"
+                        >
+                          <div className="text-gray-600">
+                            <svg
+                              className="mx-auto h-12 w-12 text-gray-400"
+                              stroke="currentColor"
+                              fill="none"
+                              viewBox="0 0 48 48"
+                            >
+                              <path
+                                d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                            <p className="mt-2 text-sm font-medium">
+                              Click to upload or drag and drop
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              PNG, JPG, PDF up to 10MB
+                            </p>
+                          </div>
+                        </label>
+                      </div>
+
+                      {uploadedFile && (
+                        <div className="flex items-center justify-between p-3 bg-blue-50 rounded-md">
+                          <span className="text-sm text-gray-700 truncate flex-1">
+                            📄 {uploadedFile.name}
+                          </span>
+                          <button
+                            onClick={() => setUploadedFile(null)}
+                            className="ml-2 text-red-500 hover:text-red-700 text-sm font-medium"
+                            disabled={isProcessing}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={processUploadedTimetable}
+                        disabled={!uploadedFile || isProcessing}
+                        className={`w-full py-2 px-4 rounded-md text-sm font-medium transition ${
+                          !uploadedFile || isProcessing
+                            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                            : "bg-blue-500 hover:bg-blue-600 text-white"
+                        }`}
+                      >
+                        {isProcessing ? (
+                          <span className="flex items-center justify-center">
+                            <svg
+                              className="animate-spin -ml-1 mr-2 h-4 w-4 text-white"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              ></circle>
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              ></path>
+                            </svg>
+                            Processing...
+                          </span>
+                        ) : (
+                          "Extract Timetable with AI"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Timetable Display */}
+                <div>
+                  <h3 className="font-semibold text-gray-700 mb-3">
+                    Your Schedule ({myTimetable.length})
+                  </h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {myTimetable.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <p className="text-lg mb-2">📋</p>
+                        <p className="text-sm">No timetable entries yet</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Add entries manually or upload a timetable
+                        </p>
+                      </div>
+                    ) : (
+                      myTimetable.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="border border-gray-200 rounded-lg p-3 hover:shadow-md transition bg-white"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="font-semibold text-gray-800">
+                                {entry.day} - {entry.subject}
+                              </div>
+                              <div className="text-sm text-gray-600 mt-1">
+                                🕐 {entry.start_time} - {entry.end_time}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                📚 {entry.semester} Semester
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2709,10 +2996,10 @@ const ProfessorDashboard = () => {
               </div>
             )}
 
-            {emergencyPool.length > 0 && (
+            {emergencyMember !== 0 && emergencyPool.length > 0 && (
               <div className="bg-orange-50 p-6 rounded-lg shadow border border-orange-200">
                 <h2 className="text-xl font-semibold mb-4 text-orange-800">
-                  Emergency Pool ({emergencyPool.length})
+                  Emergency Pool ({emergencyMember})
                 </h2>
                 <div className="space-y-3">
                   {emergencyPool.map((prof, index) => (
