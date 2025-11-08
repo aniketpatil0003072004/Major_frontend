@@ -22,8 +22,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 const FIREBASE_URL = "https://exam-proctor-42c7f-default-rtdb.firebaseio.com/";
 
 const GEMINI_API_KEY = "AIzaSyDiOkS6DK8PrYGKU_pYxQwGlIuyD9mGX-Q";
-const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent";
 
 const AuthContext = createContext();
 
@@ -669,7 +667,7 @@ const AdminDashboard = () => {
       }
     }, 0);
     setEmergencymember(num);
-  }, []);
+  }, [emergencyPool]);
 
   const handleSubmit = async (type, e) => {
     e.preventDefault();
@@ -736,7 +734,6 @@ const AdminDashboard = () => {
         return;
       }
 
-      // Save to Firebase
       let result;
       switch (type) {
         case "department":
@@ -2746,7 +2743,7 @@ Do not include any markdown formatting, code blocks, or explanatory text. Return
       }
     }, 0);
     setEmergencymember(num);
-  }, []);
+  }, [emergencyPool]);
 
   const performInstantAllocation = async (selectedDay) => {
     try {
