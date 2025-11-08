@@ -17,6 +17,7 @@ import axios from "axios";
 import toast, { Toaster } from "react-hot-toast";
 import { FaRegEye as EyeOpen } from "react-icons/fa";
 import { FaRegEyeSlash as EyeClose } from "react-icons/fa";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const FIREBASE_URL = "https://exam-proctor-42c7f-default-rtdb.firebaseio.com/";
 
@@ -2452,9 +2453,6 @@ const ProfessorDashboard = () => {
     setIsProcessing(true);
     try {
       // Dynamically import the Generative AI package
-      const { GoogleGenerativeAI } = await import(
-        "https://esm.run/@google/generative-ai"
-      );
 
       // Initialize the API with your key
       const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
